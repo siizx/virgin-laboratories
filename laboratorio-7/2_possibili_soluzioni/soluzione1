@@ -1,0 +1,430 @@
+#include "tree-chsib.h"
+
+using namespace tree;
+
+/* Nota: nei commenti usiamo "albero" e "puntatore a un nodo" come sinonimi, scegliendo di volta in volta
+la formulazione più adatta a dare la specifica di una funzione. 
+Dal punto di vista tecnico, usiamo sempre il tipo Tree sia quando operiamo su un albero, sia quando operiamo, 
+a livello concettuale, su un puntatore a un nodo dell'albero. 
+Questo approccio e' corretto in quanto un albero (o sottoalbero) è un puntatore a una struct di tipo treeNode:
+un albero è identificato univocamente dal puntatore alla sua radice */ 
+
+
+
+/*******************************************************************************************************/
+// il nodo di un albero è caratterizzato dall'etichetta, il puntatore al primo figlio e il puntatore al prossimo fratello
+// NON manteniamo il puntatore al padre, anche se sarebbe comodo per alcune funzioni (ma del tutto inutile per altre)
+struct tree::treeNode {
+    Label label;    
+    treeNode *firstChild;
+    treeNode *nextSibling;
+};
+
+
+
+/*******************************************************************************************************/
+// isEmpty restituisce true se l'albero t e' vuoto, false altrimenti
+bool tree::isEmpty(const Tree& t)
+{
+   return t == emptyTree;
+}
+
+// struttura dati ausiliaria restituita da search, che ci restituisce
+// il nodo cercato, il nodo che punta a esso (padre o fratello) e il padre
+struct search_result {
+   Tree node;
+   Tree pred;
+   Tree parent;
+};
+
+// funzione ausiliaria per search
+search_result search_aux(Tree t, const Label l, const Tree pred, const Tree parent)
+{
+   if (isEmpty(t))
+      return {emptyTree, emptyTree, emptyTree};
+   if (t->label == l)
+      return {t, pred, parent};
+   search_result res = search_aux(t->firstChild, l, t, t);
+   if (res.node != emptyTree)
+      return res;
+   return search_aux(t->nextSibling, l, t, parent);
+}
+
+// cerca un nodo con etichetta l, restituisce predecessore e padre (il predecessore è il nodo che linka
+// quello cercato, può essere il padre o il fratello precedente)
+search_result search(treeNode *t, const Label l)
+{
+   return search_aux(t, l, emptyTree, emptyTree);
+}
+
+/*******************************************************************************************************/
+// addElem aggiunge il nodo etichettato con labelOfNodeToAdd come
+// figlio del nodo etichettato con labelOfNodeInTree.
+// Caso particolare: aggiunta della radice, che si ottiene
+// con labelOfNodeInTree uguale a emptyLabel (= nessun padre), e ha successo
+// solo se l'albero e' vuoto (in caso contrario restituisce FAIL 
+// e non aggiunge nulla).
+// Restituisce FAIL se non esiste un nodo nell'albero etichettato 
+// con labelOfNodeInTree oppure se nell'albero esiste gia' un nodo 
+// etichettato con labelOfNodeToAdd; aggiunge e restituisce OK altrimenti
+Error tree::addElem(const Label labelOfNodeInTree, const Label labelOfNodeToAdd, Tree& t)
+{
+   if (labelOfNodeInTree == emptyLabel) {
+      // vogliamo creare una nuova root, funziona solo se l'albero è vuoto
+      if (isEmpty(t)) {
+         // questa sintassi costruisce un nuovo nodo inizializzando i suoi campi a questi valori
+         t = new treeNode {labelOfNodeToAdd, emptyTree, emptyTree};
+         return OK;
+      }
+      else
+         return FAIL;
+   }
+   
+   // se il nodo esiste già, fallisco
+   if (member(labelOfNodeToAdd, t))
+      return FAIL;
+   
+   // cerco il padre del nodo che mi serve
+   treeNode *parent = search(t, labelOfNodeInTree).node;
+   if (parent == emptyTree)
+      return FAIL;
+
+   // aggiungo il nuovo nodo come primo figlio del padre
+   // (l'attuale primo figlio diventa fratello del nuovo nodo)
+   // l'uso della sintassi che inizializza i nodi ci evita di dover usare una variabile temporanea
+   parent->firstChild = new treeNode {labelOfNodeToAdd, emptyTree, parent->firstChild};
+   
+   return OK;
+}     
+
+// funzione ausiliaria chiamata dalle implementazioni di deleteElem
+// attacca gli eventuali figli di t al padre
+void attach_children(Tree t, Tree parent)
+{
+   // se non ci sono figli, abbiamo finito
+   Tree first_child = t->firstChild;
+   if (first_child == emptyTree)
+      return;
+
+   // troviamo l'ultimo dei figli
+   Tree last_child = first_child;
+   while (last_child->nextSibling != emptyTree)
+      last_child = last_child->nextSibling;
+   
+   // attacchiamo in testa la nuova lista ai figli di parent
+   last_child->nextSibling = parent->firstChild;
+   parent->firstChild = first_child;
+}
+
+/*******************************************************************************************************/
+// deleteElem (versione iterativa) rimuove dall'albero il nodo etichettato con la Label l
+// e collega al padre di tale nodo tutti i suoi figli
+// Restituisce FAIL se si tenta di cancellare la radice e questa ha 
+// dei figli (non si saprebbe a che padre attaccarli) oppure se non esiste 
+// un nodo nell'albero etichettato con la Label; cancella e restituisce OK altrimenti
+Error tree::deleteElemI(const Label l, Tree& t)
+{
+   // cerchiamo l'elemento; in sr avremo nodo, predecessore e padre
+   search_result sr = search(t, l);
+
+   // fallisce se non si trova il label
+   if (isEmpty(sr.node))
+      return FAIL;
+   
+   // cerr << "found " << l << " child of " << (sr.parent == emptyTree ? "root" : sr.parent->label) << endl;
+
+   if (isEmpty(sr.parent)) {  // il nodo da cancellare è la radice
+      if (!isEmpty(sr.node->firstChild)) 
+         return FAIL;  // fallisce se si tenta di cancellare la radice e questa ha dei figli
+      t = emptyTree;
+   } else {
+      // aggiusta i puntatori
+      (sr.pred == sr.parent ? sr.pred->firstChild : sr.pred->nextSibling) = sr.node->nextSibling;
+      // equivalente a
+      // if (sr.pred == sr.parent)
+      //    sr.pred->firstChild = sr.node->nextSibling;
+      // else
+      //    sr.pred->nextSibling = sr.node->nextSibling;
+
+      // attacca gli eventuali figli al padre
+      attach_children(sr.node, sr.parent);
+   }
+
+   // cancella il nodo
+   delete sr.node;
+   return OK;
+}
+
+
+// funzione ausiliaria per deleteElemR
+Error delete_aux(const Label l, Tree &t, Tree parent)
+{
+   // non si può trovare l in un albero vuoto
+   if (isEmpty(t))
+      return FAIL;
+
+   if (l == t->label) {  // abbiamo trovato il nodo da cancellare
+      Tree tmp = t;  // tmp contiene i dati del nodo che cancelleremo
+      t = t->nextSibling;  // facciamo puntare t al suo prossimo fratello
+      attach_children(tmp, parent);  // attacchiamo gli eventuali figli al padre
+      delete tmp;
+      return OK;
+   }
+
+   // in questo caso abbiamo deciso di andare depth first: cerchiamo prima tra i figli
+   if (delete_aux(l, t->firstChild, t) == OK)
+      return OK;
+   // se la cosa non funziona, proviamo con i fratelli
+   return delete_aux(l, t->nextSibling, parent);
+}
+
+/*******************************************************************************************************/
+// deleteElem (versione ricorsiva): stesso comportamento della versione iterativa, ma implementata ricorsivamente
+// (può anche non essere ricorsiva la deleteElemR, ma deve fare uso di funzioni ausiliarie ricorsive)
+Error tree::deleteElemR(const Label l, Tree& t)
+{
+   // non possiamo cancellare elementi da alberi vuoti
+   if (isEmpty(t))
+      return FAIL;
+   if (l == t->label) {  // vogliamo cancellare la radice
+      if (!isEmpty(t->firstChild))
+         return FAIL;  // possiamo farlo solo se essa non ha figli
+      delete t;
+      t = emptyTree;
+   }
+   return delete_aux(l, t->firstChild, t);
+}
+
+
+
+/*******************************************************************************************************/
+// father restituisce l'etichetta del padre del nodo con etichetta l se il nodo esiste nell'albero 
+// (o sottoalbero) t e se il padre esiste. 
+// Restituisce la costante emptyLabel altrimenti
+Label tree::father(const Label l, const Tree& t)
+{
+   Tree parent = search(t, l).parent;
+   return isEmpty(parent) ? emptyLabel : parent->label;
+}
+
+
+
+/*******************************************************************************************************/
+// children restituisce una lista di Label, contenente le etichette 
+// di tutti i figli nell'albero t del nodo etichettato con l
+// La lista può essere implementata usando una qualunque delle strutture dati viste a lezione
+// (non un Vector!!!): si riusi una implementazione del TDD list, adattandola 
+// a elementi di tipo string (nelle precedenti esercitazioni gli elementi erano int)
+list::List tree::children(const Label l, const Tree& t)
+{
+   Tree n = search(t, l).node;
+   list::List lst = list::createEmpty();
+   if (!isEmpty(n))
+      for (Tree child = n->firstChild; child != emptyTree; child = child->nextSibling)
+         list::addBack(child->label, lst);
+   return lst;
+}
+
+
+
+/*******************************************************************************************************/
+// degree restituisce il numero di archi uscenti dal nodo etichettato con l; restituisce -1 se non esiste 
+// nessuna etichetta l nell'albero
+int tree::degree(const Label l, const Tree& t)
+{
+   Tree n = search(t, l).node;
+   if (isEmpty(n))
+      return -1;
+
+   // iteriamo, contandoli, su tutti i figli
+   int res = 0;
+   for (Tree child = n->firstChild; child != emptyTree; child = child->nextSibling)
+      res++;
+   return res;
+}
+
+
+// funzione ricorsiva ausiliaria per ancestors
+// costruisce il risultato in lst, restituisce true se l è stato trovato
+// nel sottoalbero e false altrimenti
+bool ancestors_aux(const Label l, const Tree t, list::List &lst)
+{
+   if (isEmpty(t))
+      return false;
+   if (t->label == l)
+      return true;
+   // se uno dei figli è un antenato, lo è anche t
+   if (ancestors_aux(l, t->firstChild, lst)) {
+      // nota: addFront è inefficiente con l'implementazione tramite array dinamici
+      list::addFront(t->label, lst);
+      return true;
+   }
+   // altrimenti, andiamo a cercare il prossimo fratello
+   return ancestors_aux(l, t->nextSibling, lst);
+}
+
+/*******************************************************************************************************/
+// ancestors (versione ricorsiva) restituisce una lista di Label, contenente le etichette 
+// di tutti gli antenati del nodo l ESCLUSA l'etichetta del nodo stesso
+// La lista può essere implementata usando una delle strutture dati viste a lezione
+// (non un Vector)
+// (può anche non essere ricorsiva la ancestorsR, ma deve fare uso di funzioni ausiliarie ricorsive)
+list::List tree::ancestorsR(const Label l, const Tree& t)
+{
+   list::List lst = list::createEmpty();
+   ancestors_aux(l, t, lst);
+   return lst;
+}
+
+
+
+/*******************************************************************************************************/
+// ancestors (versione iterativa) restituisce una lista di Label, contenente le etichette 
+// di tutti gli antenati del nodo l ESCLUSA l'etichetta del nodo stesso
+// La lista può essere implementata usando una delle strutture dati viste a lezione
+// (non un Vector)
+list::List tree::ancestorsI(const Label l, const Tree& t)
+{
+   // quest'implementazione non è efficiente perché facciamo molte ricerche
+   list::List lst = list::createEmpty();
+   Label ancestor = father(l, t);
+   while (ancestor != emptyLabel) {
+      list::addFront(ancestor, lst);
+      ancestor = father(ancestor, t);
+   }
+   return lst;
+}
+
+
+/*******************************************************************************************************/
+// leastCommonAncestor restituisce l'etichetta del minimo antenato comune 
+// ai nodi etichettati con label1 e label2
+Label tree::leastCommonAncestor(const Label label1, const Label label2, const Tree& t)
+{
+   // calcola la lista degli antenati di label1 e label2
+   list::List lst1 = ancestorsR(label1, t), lst2 = ancestorsR(label2, t);
+   int size1 = list::size(lst1), size2 = list::size(lst2);
+
+   // finché gli antenati sono gli stessi, aggiungiamoli al risultato
+   int min_size = size1 < size2 ? size1 : size2;
+   Label res = emptyLabel;
+   for (int i = 0; i < min_size; i++) {
+      Label l1 = list::get(i, lst1), l2 = list::get(i, lst2);
+      if (l1 != l2)
+         break;
+      res = l1;
+   }
+
+   // evitiamo i memory leak! ripuliamo lst1 e lst2
+   list::clear(lst1);
+   list::clear(lst2);
+   return res;
+}
+
+
+
+/*******************************************************************************************************/
+// member restituisce true se il nodo etichettato con la label l appartiene all'albero t e false altrimenti
+bool tree::member(const Label l, const Tree& t)
+{
+   return !isEmpty(search(t, l).node);
+}
+
+
+
+/*******************************************************************************************************/
+// numNodes restituisce il numero di nodi nell'albero t mediante una visita ricorsiva in depthfirst
+int tree::numNodes(const Tree& t)
+{
+   if (isEmpty(t))
+      return 0;
+   return 1 + numNodes(t->firstChild) + numNodes(t->nextSibling);
+}
+
+
+
+/*******************************************************************************************************/
+// createEmptyTree restituisce l'albero vuoto
+Tree tree::createEmpty()
+{
+   return emptyTree;
+}
+
+
+// funzione ausiliaria per printTree
+// il parametro depth ci dice la profondità del sotto-albero che stiamo stampando 
+void print_aux(const Tree t, int depth)
+{
+   if (isEmpty(t))
+      return;
+   // stampiamo un numero di trattini pari al doppio della profondità 
+   for (int i=0; i < depth; i++)
+      cout << "--";
+   cout << t->label << endl;
+   print_aux(t->firstChild, depth + 1);
+   print_aux(t->nextSibling, depth);
+}
+
+/*******************************************************************************************************/
+// Visualizzazione possibilmente strutturata come visto a lezione
+void printTree(const Tree& t) {
+   print_aux(t, 0);
+}
+
+
+
+/****************************************************************/
+// Questa funzione NON richiede di conoscere come e' fatta la struttura dati che implementa l'albero: usa solo addElem e quindi e' ad 
+// un alto livello di astrazione
+// Vantaggi: codice compatto, leggibile, riutilizzabile per qualunque implementazione del TDD Tree
+// Svantaggi: inefficiente: la addElem cerca ogni volta il nodo con etichetta parentLabel, mentre basterebbe una chiamata sola per 
+// trovarlo e poi si potrebbero attaccare tutti i figli a esso, senza ripetere la dispendiosa ricerca nell'albero; per renderla 
+// efficiente dovrei pero' accedere direttamente alla struttura dati chiamando qualche funzione ausiliaria che operi 
+// sui nodi dell'albero, rinunciando a scrivere codice modulare, chiaro e ad un ragionevole livello di astrazione... 
+// Non esiste un'opzione migliore tra le due: se il codice deve essere efficiente, è opportuno scrivere una funzione ad hoc per 
+// una determinata implementazione; se il codice deve essere riutilizzabile, bisogna limitarsi a usare le funzioni offerte dall'
+// interfaccia del TDD in modo che la funzione continui ad andare bene anche se cambia l'implementazione
+Tree readFromStream(istream& str)
+{
+    Tree t = createEmpty(); 
+    string line;
+    Label rootLabel, parentLabel, childLabel;
+    getline(str, line);
+    istringstream instream;            // uso una variabile di tipo istringstream per poter scandire i pezzi di ogni riga usando >>
+    instream.clear();
+    instream.str(line);
+    instream >> rootLabel;             // il primo elemento che si incontra nel file e' l'etichetta della radice, per convenzione su come deve essere fatto il file
+    addElem(emptyLabel, rootLabel, t); // la si inserisce nell'albero vuoto, indicando che il padre non c'e' (primo argomento emptyLabel)
+    getline(str, line);                // poi si iniziano a scansionare le righe seguenti
+    instream.clear();
+    instream.str(line);
+    while (!str.eof())  
+        {    
+        instream >> parentLabel; // in ogni riga del file, il primo elemento e' l'etichetta del nodo padre e gli altri sono le etichette dei figli
+        normalize(parentLabel); // normalizzo l'etichetta del padre
+        while (instream >> childLabel)            // finche' la riga corrente non e' terminata, leggo la prossima etichetta
+            { 
+            normalize(childLabel);    // la normalizzo
+            // cerr << "adding " << childLabel << " child of " << parentLabel << endl;
+            Error err = addElem(parentLabel, childLabel, t); // e la attacco al padre
+            if (err == FAIL)
+               cerr << "adding " << childLabel << " failed" << endl;
+            }
+        getline(str, line);  
+        instream.clear();
+        instream.str(line);
+        }
+    str.clear();
+    return t;
+}
+
+
+
+/****************************************************************/
+Tree readFromFile(string nome_file)
+{
+    ifstream ifs(nome_file.c_str()); // apertura di uno stream associato ad un file, in lettura
+    if (!ifs) {cout << "\nErrore apertura file, verificare di avere inserito un nome corretto\n"; return createEmpty();}  
+    return readFromStream(ifs);
+}
+

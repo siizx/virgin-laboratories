@@ -1,0 +1,10 @@
+Vi chiediamo di testare automaticamente la vostra implementazione. Abbiamo realizzato dei casi di test che potete eseguire con il comando
+
+python3 run_test.py ./[eseguibile]
+Provateli via via che implementate le funzioni necessarie! Potrebbe essere divertente vedere che gli errori diminuiscono...
+
+Nota bene 1:  i casi di test cominceranno ad essere corretti quando avrete implementato un numero minimo di funzioni, almeno fino ad addRear: non disperate!
+
+Nota bene 2: è possibile che ci siano errori abbastanza ingegnosi da riuscire a passare le maglie dei nostri test! Se ne trovate di "ragionevoli", cioè errori che è possibile fare senza cercare apposta di evadere i nostri test, fateci sapere!
+
+Ultime modifiche: lunedì, 20 marzo 2023, 17:41
